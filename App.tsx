@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     SafeAreaView,
@@ -11,11 +11,17 @@ import {
     useWindowDimensions,
     View,
 } from 'react-native';
-import Tts from 'react-native-tts';
 import RenderHTML from 'react-native-render-html';
+import RNFS from 'react-native-fs';
+import Sound from 'react-native-sound';
 
 const MAX_ARTICLE_CHARS = 12000;
 const MAX_SPOKEN_CHARS = 3000;
+
+const ELEVEN_API_KEY = '';
+const VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
+const AUDIO_FILE_NAME = 'article-reader-tts.mp3';
+const AUDIO_FILE_PATH = `${RNFS.CachesDirectoryPath}/${AUDIO_FILE_NAME}`;
 
 const isValidUrl = (value: string): boolean => {
     try {
@@ -55,11 +61,7 @@ const stripHtml = (html: string): string =>
 
 const extractTitle = (html: string): string => {
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const ogTitleMatch = html.match(
-        /<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["'][^>]*>/i,
-    );
-
-    return stripHtml(ogTitleMatch?.[1] || titleMatch?.[1] || 'Untitled Article');
+    return stripHtml(titleMatch?.[1] || 'Untitled Article');
 };
 
 const extractParagraphs = (html: string): string[] => {
@@ -69,24 +71,50 @@ const extractParagraphs = (html: string): string[] => {
 
 const extractReadableContent = (html: string): string => {
     const paragraphs = extractParagraphs(html);
-
     if (paragraphs.length) {
         return paragraphs.join('\n\n').slice(0, MAX_ARTICLE_CHARS);
     }
-
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return stripHtml(bodyMatch?.[1] || html).slice(0, MAX_ARTICLE_CHARS);
+    return stripHtml(html).slice(0, MAX_ARTICLE_CHARS);
 };
 
 const buildHtmlForDisplay = (title: string, text: string): string => {
     const paragraphs = text
         .split('\n')
-        .map(l => l.trim())
+        .map(line => line.trim())
         .filter(Boolean)
-        .map(l => `<p>${escapeHtml(l)}</p>`)
+        .map(line => `<p>${escapeHtml(line)}</p>`)
         .join('');
 
     return `<div><h1>${escapeHtml(title)}</h1>${paragraphs}</div>`;
+};
+
+const toBase64Audio = async (response: Response): Promise<string> => {
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onerror = () => reject(new Error('Could not read audio response'));
+        reader.onloadend = () => {
+            const dataUrl = reader.result;
+
+            if (typeof dataUrl !== 'string') {
+                reject(new Error('Invalid audio response'));
+                return;
+            }
+
+            const base64 = dataUrl.split(',')[1];
+
+            if (!base64) {
+                reject(new Error('Missing audio data'));
+                return;
+            }
+
+            resolve(base64);
+        };
+
+        reader.readAsDataURL(blob);
+    });
 };
 
 const App: React.FC = () => {
@@ -97,67 +125,169 @@ const App: React.FC = () => {
     const [error, setError] = useState('');
     const [isSpeaking, setIsSpeaking] = useState(false);
 
+    const soundRef = useRef<Sound | null>(null);
+    const isMountedRef = useRef(true);
+    const requestIdRef = useRef(0);
     const { width } = useWindowDimensions();
-
-    useEffect(() => {
-        Tts.getInitStatus()
-            .then(() => {
-                Tts.setDefaultRate(0.5);
-                Tts.setDefaultPitch(1.0);
-                Tts.setIgnoreSilentSwitch('ignore');
-            })
-            .catch(() => {
-                setError('TTS not available');
-            });
-
-        const onStart = () => setIsSpeaking(true);
-        const onFinish = () => setIsSpeaking(false);
-        const onCancel = () => setIsSpeaking(false);
-
-        Tts.addEventListener('tts-start', onStart);
-        Tts.addEventListener('tts-finish', onFinish);
-        Tts.addEventListener('tts-cancel', onCancel);
-
-        return () => {
-            Tts.removeEventListener('tts-start', onStart);
-            Tts.removeEventListener('tts-finish', onFinish);
-            Tts.removeEventListener('tts-cancel', onCancel);
-            Tts.stop();
-        };
-    }, []);
 
     const articleHtml = useMemo(() => {
         if (!articleText) return '';
         return buildHtmlForDisplay(title, articleText);
     }, [articleText, title]);
 
-    const stopSpeech = (): void => {
+    useEffect(() => {
+        Sound.setCategory('Playback');
+        Sound.setActive(true);
+
+        return () => {
+            isMountedRef.current = false;
+
+            if (soundRef.current) {
+                soundRef.current.stop(() => {
+                    soundRef.current?.release();
+                    soundRef.current = null;
+                });
+            }
+        };
+    }, []);
+
+    const stopSpeech = async (): Promise<void> => {
+        requestIdRef.current += 1;
+
+        if (soundRef.current) {
+            await new Promise<void>(resolve => {
+                soundRef.current?.stop(() => {
+                    soundRef.current?.release();
+                    soundRef.current = null;
+                    resolve();
+                });
+            });
+        }
+
         try {
-            Tts.stop();
-        } catch (e) {
-            console.warn(e);
-        } finally {
+            const exists = await RNFS.exists(AUDIO_FILE_PATH);
+            if (exists) {
+                await RNFS.unlink(AUDIO_FILE_PATH);
+            }
+        } catch {}
+
+        if (isMountedRef.current) {
             setIsSpeaking(false);
         }
     };
 
-    const playSpeech = (text: string): void => {
+    const playSpeech = async (text: string): Promise<void> => {
         if (!text) {
             setError('Load article first');
             return;
         }
 
-        const textToSpeak = text.slice(0, MAX_SPOKEN_CHARS);
+        if (!ELEVEN_API_KEY.trim()) {
+            setError('Add your ElevenLabs API key in App.tsx');
+            return;
+        }
+
+        const requestId = requestIdRef.current + 1;
+        requestIdRef.current = requestId;
+
+        setError('');
+        setIsSpeaking(true);
 
         try {
-            if (isSpeaking) {
-                Tts.stop();
+            await stopSpeech();
+            requestIdRef.current = requestId;
+
+            const response = await fetch(
+                `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'xi-api-key': ELEVEN_API_KEY,
+                        'Content-Type': 'application/json',
+                        Accept: 'audio/mpeg',
+                    },
+                    body: JSON.stringify({
+                        text: text.slice(0, MAX_SPOKEN_CHARS),
+                        model_id: 'eleven_flash_v2_5',
+                        output_format: 'mp3_44100_128',
+                        voice_settings: {
+                            stability: 0.4,
+                            similarity_boost: 0.8,
+                        },
+                    }),
+                },
+            );
+
+            if (!response.ok) {
+                const apiError = await response.text();
+                throw new Error(apiError || `ElevenLabs request failed (${response.status})`);
             }
 
-            Tts.speak(textToSpeak);
-        } catch (e) {
+            const base64Audio = await toBase64Audio(response);
+
+            if (requestId !== requestIdRef.current) {
+                return;
+            }
+
+            await RNFS.writeFile(AUDIO_FILE_PATH, base64Audio, 'base64');
+            const writtenFile = await RNFS.stat(AUDIO_FILE_PATH);
+
+            if (!writtenFile.size || Number(writtenFile.size) === 0) {
+                throw new Error('Audio file was empty');
+            }
+
+            if (requestId !== requestIdRef.current) {
+                return;
+            }
+
+            const sound = await new Promise<Sound>((resolve, reject) => {
+                const nextSound = new Sound(AUDIO_FILE_NAME, Sound.CACHES, loadError => {
+                    if (loadError) {
+                        reject(loadError);
+                        return;
+                    }
+
+                    if (!nextSound.isLoaded() || nextSound.getDuration() <= 0) {
+                        reject(new Error('Audio loaded with zero duration'));
+                        return;
+                    }
+
+                    resolve(nextSound);
+                });
+            });
+
+            if (requestId !== requestIdRef.current) {
+                sound.release();
+                return;
+            }
+
+            soundRef.current = sound;
+            sound.setVolume(1);
+
+            sound.play(success => {
+                sound.release();
+
+                if (soundRef.current === sound) {
+                    soundRef.current = null;
+                }
+
+                if (!isMountedRef.current || requestId !== requestIdRef.current) {
+                    return;
+                }
+
+                if (!success) {
+                    setError('Playback failed');
+                }
+
+                setIsSpeaking(false);
+            });
+        } catch (e: any) {
             console.warn(e);
-            setError('TTS failed');
+
+            if (isMountedRef.current && requestId === requestIdRef.current) {
+                setError(e?.message || 'ElevenLabs failed');
+                setIsSpeaking(false);
+            }
         }
     };
 
@@ -173,19 +303,14 @@ const App: React.FC = () => {
         setError('');
         setTitle('');
         setArticleText('');
-        stopSpeech();
+        await stopSpeech();
 
         try {
             const res = await fetch(trimmedUrl);
             const html = await res.text();
 
-            const t = extractTitle(html);
-            const content = extractReadableContent(html);
-
-            if (!content) throw new Error('No content');
-
-            setTitle(t);
-            setArticleText(content);
+            setTitle(extractTitle(html));
+            setArticleText(extractReadableContent(html));
         } catch (e: any) {
             setError(e.message || 'Failed to load');
         } finally {
@@ -200,13 +325,11 @@ const App: React.FC = () => {
             <View style={styles.container}>
                 <Text style={styles.heading}>📰 Article Reader</Text>
 
-                {/* INPUT CARD */}
                 <View style={styles.card}>
                     <TextInput
                         value={url}
                         onChangeText={setUrl}
                         placeholder="Enter article URL..."
-                        placeholderTextColor="#999"
                         style={styles.input}
                     />
 
@@ -217,25 +340,27 @@ const App: React.FC = () => {
                     </TouchableOpacity>
                 </View>
 
-                {/* AUDIO CONTROLS */}
                 <View style={styles.audioRow}>
                     <TouchableOpacity
                         style={styles.secondaryButton}
-                        onPress={() => playSpeech(articleText)}>
-                        <Text style={styles.controlText}>▶ Play</Text>
+                        onPress={() => {
+                            playSpeech(articleText).catch(console.warn);
+                        }}>
+                        <Text>{isSpeaking ? '▶ Playing...' : '▶ Play'}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={styles.secondaryButton}
-                        onPress={stopSpeech}>
-                        <Text style={styles.controlText}>⏹ Stop</Text>
+                        onPress={() => {
+                            stopSpeech().catch(console.warn);
+                        }}>
+                        <Text>⏹ Stop</Text>
                     </TouchableOpacity>
                 </View>
 
-                {isLoading && <ActivityIndicator style={{ marginTop: 10 }} />}
+                {isLoading && <ActivityIndicator style={styles.loader} />}
                 {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                {/* ARTICLE CARD */}
                 <ScrollView style={styles.articleContainer}>
                     {articleHtml ? (
                         <RenderHTML contentWidth={width} source={{ html: articleHtml }} />
@@ -249,21 +374,9 @@ const App: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#f4f6fb',
-    },
-
-    container: {
-        flex: 1,
-        padding: 16,
-    },
-
-    heading: {
-        fontSize: 26,
-        fontWeight: 'bold',
-        marginBottom: 12,
-    },
+    safeArea: { flex: 1, backgroundColor: '#f4f6fb' },
+    container: { flex: 1, padding: 16 },
+    heading: { fontSize: 26, fontWeight: 'bold', marginBottom: 12 },
 
     card: {
         backgroundColor: '#fff',
@@ -277,7 +390,6 @@ const styles = StyleSheet.create({
         borderColor: '#e0e0e0',
         borderRadius: 10,
         padding: 12,
-        backgroundColor: '#fafafa',
     },
 
     primaryButton: {
@@ -288,15 +400,9 @@ const styles = StyleSheet.create({
         marginTop: 10,
     },
 
-    primaryText: {
-        color: '#fff',
-        fontWeight: '600',
-    },
+    primaryText: { color: '#fff', fontWeight: '600' },
 
-    audioRow: {
-        flexDirection: 'row',
-        marginTop: 12,
-    },
+    audioRow: { flexDirection: 'row', marginTop: 12 },
 
     secondaryButton: {
         flex: 1,
@@ -308,10 +414,6 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
 
-    controlText: {
-        fontWeight: '500',
-    },
-
     articleContainer: {
         marginTop: 12,
         backgroundColor: '#fff',
@@ -319,16 +421,11 @@ const styles = StyleSheet.create({
         padding: 12,
     },
 
-    placeholder: {
-        textAlign: 'center',
-        color: '#888',
-        marginTop: 20,
-    },
+    loader: { marginTop: 10 },
 
-    error: {
-        color: 'red',
-        marginTop: 10,
-    },
+    placeholder: { textAlign: 'center', color: '#888', marginTop: 20 },
+
+    error: { color: 'red', marginTop: 10 },
 });
 
 export default App;

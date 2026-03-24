@@ -1856,6 +1856,30 @@ PODS:
     - React-utils (= 0.84.1)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.84.1)
+  - RNFS (2.20.0):
+    - React-Core
+  - RNSound (0.13.0):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - TextToSpeech (4.1.1):
     - React-Core
   - Yoga (0.0.0)
@@ -1936,6 +1960,8 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
+  - RNFS (from `../node_modules/react-native-fs`)
+  - RNSound (from `../node_modules/react-native-sound`)
   - TextToSpeech (from `../node_modules/react-native-tts`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
@@ -2089,6 +2115,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
+  RNFS:
+    :path: "../node_modules/react-native-fs"
+  RNSound:
+    :path: "../node_modules/react-native-sound"
   TextToSpeech:
     :path: "../node_modules/react-native-tts"
   Yoga:
@@ -2169,6 +2199,8 @@ SPEC CHECKSUMS:
   ReactCodegen: 797de5178718324c6eba3327b07f9a423fbd5787
   ReactCommon: 07572bf9e687c8a52fbe4a3641e9e3a1a477c78e
   ReactNativeDependencies: ab285bbc82baf534cab140423a71401e0b5da5ed
+  RNFS: 89de7d7f4c0f6bafa05343c578f61118c8282ed8
+  RNSound: 25cfdc38a1353362053c01ca827d7ddf80860de1
   TextToSpeech: 89b239221ec378d213af422d14789a729705360b
   Yoga: c0b3f2c7e8d3e327e450223a2414ca3fa296b9a2
 
