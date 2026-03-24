@@ -133,7 +133,7 @@ const App: React.FC = () => {
 
     const stopSpeech = (): void => {
         try {
-            Tts.stop(); // ✅ NO await
+            Tts.stop();
         } catch (e) {
             console.warn(e);
         } finally {
@@ -151,10 +151,10 @@ const App: React.FC = () => {
 
         try {
             if (isSpeaking) {
-                Tts.stop(); // ✅ NO await
+                Tts.stop();
             }
 
-            Tts.speak(textToSpeak); // ✅ NO await
+            Tts.speak(textToSpeak);
         } catch (e) {
             console.warn(e);
             setError('TTS failed');
@@ -195,45 +195,52 @@ const App: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <StatusBar barStyle="dark-content" />
+            <StatusBar barStyle="dark-content" backgroundColor="#f4f6fb" />
+
             <View style={styles.container}>
-                <Text style={styles.heading}>Article Reader</Text>
+                <Text style={styles.heading}>📰 Article Reader</Text>
 
-                <TextInput
-                    value={url}
-                    onChangeText={setUrl}
-                    placeholder="Enter URL"
-                    style={styles.input}
-                />
+                {/* INPUT CARD */}
+                <View style={styles.card}>
+                    <TextInput
+                        value={url}
+                        onChangeText={setUrl}
+                        placeholder="Enter article URL..."
+                        placeholderTextColor="#999"
+                        style={styles.input}
+                    />
 
-                <TouchableOpacity style={styles.primaryButton} onPress={loadArticle}>
-                    <Text style={{ color: '#fff' }}>
-                        {isLoading ? 'Loading...' : 'Load Article'}
-                    </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity style={styles.primaryButton} onPress={loadArticle}>
+                        <Text style={styles.primaryText}>
+                            {isLoading ? 'Loading...' : 'Load Article'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
 
+                {/* AUDIO CONTROLS */}
                 <View style={styles.audioRow}>
                     <TouchableOpacity
                         style={styles.secondaryButton}
                         onPress={() => playSpeech(articleText)}>
-                        <Text>Play</Text>
+                        <Text style={styles.controlText}>▶ Play</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={styles.secondaryButton}
                         onPress={stopSpeech}>
-                        <Text>Stop</Text>
+                        <Text style={styles.controlText}>⏹ Stop</Text>
                     </TouchableOpacity>
                 </View>
 
-                {isLoading && <ActivityIndicator />}
+                {isLoading && <ActivityIndicator style={{ marginTop: 10 }} />}
                 {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                <ScrollView>
+                {/* ARTICLE CARD */}
+                <ScrollView style={styles.articleContainer}>
                     {articleHtml ? (
                         <RenderHTML contentWidth={width} source={{ html: articleHtml }} />
                     ) : (
-                        <Text>No content yet</Text>
+                        <Text style={styles.placeholder}>No content yet</Text>
                     )}
                 </ScrollView>
             </View>
@@ -242,24 +249,86 @@ const App: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    container: { flex: 1, padding: 16 },
-    heading: { fontSize: 24, fontWeight: 'bold' },
-    input: { borderWidth: 1, marginVertical: 10, padding: 10 },
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#f4f6fb',
+    },
+
+    container: {
+        flex: 1,
+        padding: 16,
+    },
+
+    heading: {
+        fontSize: 26,
+        fontWeight: 'bold',
+        marginBottom: 12,
+    },
+
+    card: {
+        backgroundColor: '#fff',
+        padding: 14,
+        borderRadius: 12,
+        elevation: 3,
+    },
+
+    input: {
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        borderRadius: 10,
+        padding: 12,
+        backgroundColor: '#fafafa',
+    },
+
     primaryButton: {
         backgroundColor: '#007AFF',
-        padding: 12,
+        padding: 14,
+        borderRadius: 10,
         alignItems: 'center',
+        marginTop: 10,
     },
+
+    primaryText: {
+        color: '#fff',
+        fontWeight: '600',
+    },
+
+    audioRow: {
+        flexDirection: 'row',
+        marginTop: 12,
+    },
+
     secondaryButton: {
         flex: 1,
-        backgroundColor: '#eee',
-        padding: 12,
-        margin: 5,
+        backgroundColor: '#fff',
+        padding: 14,
+        marginHorizontal: 5,
+        borderRadius: 10,
         alignItems: 'center',
+        elevation: 2,
     },
-    audioRow: { flexDirection: 'row' },
-    error: { color: 'red', marginTop: 10 },
+
+    controlText: {
+        fontWeight: '500',
+    },
+
+    articleContainer: {
+        marginTop: 12,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+    },
+
+    placeholder: {
+        textAlign: 'center',
+        color: '#888',
+        marginTop: 20,
+    },
+
+    error: {
+        color: 'red',
+        marginTop: 10,
+    },
 });
 
 export default App;
